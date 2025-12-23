@@ -52,11 +52,22 @@ download_data_all_zones <- function(dates, gen, zonas = c("1", "2", "3", "4")) {
   all_data <- lapply(zonas, function(z) {
     message("Downloading data for zona ", z)
     zone_list <- download_data_list(dates, gen, zona = z)
-    zone_data <- do.call(rbind, zone_list)
-    return(zone_data)
+    # Filter out NULL values before rbinding
+    zone_list <- Filter(Negate(is.null), zone_list)
+    if (length(zone_list) > 0) {
+      zone_data <- do.call(rbind, zone_list)
+      return(zone_data)
+    }
+    return(NULL)
   })
   
+  # Filter out NULL values before combining all zones
+  all_data <- Filter(Negate(is.null), all_data)
+  
   # Combine all zones into a single dataframe
-  combined_data <- do.call(rbind, all_data)
-  return(combined_data)
+  if (length(all_data) > 0) {
+    combined_data <- do.call(rbind, all_data)
+    return(combined_data)
+  }
+  return(NULL)
 }
