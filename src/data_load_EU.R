@@ -6,6 +6,8 @@ library(readr)
 library(lubridate)
 library(entsoeapi)
 
+Sys.setenv(ENTSOE_PAT = "0b684c76-20b4-4b40-ba91-083056a4a00a")
+
 source("src/helper_func_EU.R")
 
 # Define ENTSO-E zones and generation types
