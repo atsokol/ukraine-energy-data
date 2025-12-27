@@ -5,8 +5,8 @@ library(purrr)
 library(readr)
 library(lubridate)
 library(entsoeapi)
-library(jsonlite)
-library(httr)
+
+Sys.setenv(ENTSOE_PAT = "0b684c76-20b4-4b40-ba91-083056a4a00a")
 
 source("src/helper_func_EU.R")
 
@@ -20,28 +20,29 @@ zones <- c(
 
 gen_types <- c("B16", "B19") # Solar and Wind onshore
 
-# Define end date
+# Define end date - convert to datetime
 end_date <- floor_date(today(), "month") - days(1)  # Last day of previous month
+end_datetime <- ymd_hms(paste(end_date, "23:00:00"), tz = "UTC")
 
 # Function to determine start date based on existing file
-get_start_date <- function(filepath, default_start = as.Date("2022-01-01")) {
+get_start_datetime <- function(filepath, default_start = ymd_hms("2022-01-01 00:00:00", tz = "UTC")) {
   if (file.exists(filepath)) {
     existing_data <- read_csv(filepath, show_col_types = FALSE)
-    last_date <- max(as.Date(existing_data$hour))
-    return(last_date + days(1))
+    last_datetime <- max(ymd_hms(existing_data$hour, tz = "UTC"))
+    return(last_datetime + hours(1))
   } else {
     return(default_start)
   }
 }
 
 # Determine start dates for each dataset
-gen_start <- get_start_date("data/data_raw/yield_RES_EU.csv")
-price_start <- get_start_date("data/data_raw/DAM_EU.csv")
-load_start <- get_start_date("data/data_raw/load_EU.csv")
+gen_start <- get_start_datetime("data/data_raw/yield_RES_EU.csv")
+price_start <- get_start_datetime("data/data_raw/DAM_EU.csv")
+load_start <- get_start_datetime("data/data_raw/load_EU.csv")
 
 # Download and update RES generation data
-if (gen_start <= end_date) {
-  new_gen <- download_gen_eu(gen_start, end_date)
+if (gen_start <= end_datetime) {
+  new_gen <- download_gen_eu(zones, gen_types, gen_start, end_datetime)
   
   if (file.exists("data/data_raw/yield_RES_EU.csv")) {
     existing_gen <- read_csv("data/data_raw/yield_RES_EU.csv", show_col_types = FALSE)
@@ -51,14 +52,14 @@ if (gen_start <= end_date) {
   }
   
   write_csv(gen_data, "data/data_raw/yield_RES_EU.csv")
-  message("RES generation data updated from ", gen_start, " to ", end_date)
+  message("RES generation data updated from ", gen_start, " to ", end_datetime)
 } else {
   message("RES generation data is up to date")
 }
 
 # Download and update DAM price data
-if (price_start <= end_date) {
-  new_price <- download_price_eu(price_start, end_date)
+if (price_start <= end_datetime) {
+  new_price <- download_price_eu(zones, price_start, end_datetime)
   
   if (file.exists("data/data_raw/DAM_EU.csv")) {
     existing_price <- read_csv("data/data_raw/DAM_EU.csv", show_col_types = FALSE)
@@ -68,14 +69,14 @@ if (price_start <= end_date) {
   }
   
   write_csv(price_data, "data/data_raw/DAM_EU.csv")
-  message("DAM price data updated from ", price_start, " to ", end_date)
+  message("DAM price data updated from ", price_start, " to ", end_datetime)
 } else {
   message("DAM price data is up to date")
 }
 
 # Download and update load data
-if (load_start <= end_date) {
-  new_load <- download_load_eu(load_start, end_date)
+if (load_start <= end_datetime) {
+  new_load <- download_load_eu(zones, load_start, end_datetime)
   
   if (file.exists("data/data_raw/load_EU.csv")) {
     existing_load <- read_csv("data/data_raw/load_EU.csv", show_col_types = FALSE)
@@ -85,7 +86,26 @@ if (load_start <= end_date) {
   }
   
   write_csv(load_data, "data/data_raw/load_EU.csv")
-  message("Load data updated from ", load_start, " to ", end_date)
+  message("Load data updated from ", load_start, " to ", end_datetime)
 } else {
   message("Load data is up to date")
 }
+
+# Check and fix hour column type
+# First, ensure gen_all has proper structure
+if (is.list(gen_all$hour) && !inherits(gen_all$hour, "POSIXct")) {
+  gen_all <- gen_all |>
+    unnest(cols = hour)
+}
+
+# Convert hour to POSIXct if needed
+gen_all <- gen_all |>
+  mutate(hour = as.POSIXct(hour, tz = "UTC"))
+
+# Filter THEN complete
+gen_all <- gen_all |>
+  filter(hour >= as.POSIXct(start_datetime, tz = "UTC"), 
+         hour < as.POSIXct(end_datetime, tz = "UTC"))
+
+gen_all <- gen_all |>
+  complete(zone, hour, tech, fill = list(gen_mw = 0))

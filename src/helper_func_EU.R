@@ -1,20 +1,19 @@
-
 #============================================================================
 # Functions to download data for EU countries from ENTSO-E
 #============================================================================
 
 # Download RES generation data
-download_gen_eu <- function(start_date, end_date) {
+download_gen_eu <- function(zones, gen_types, start_datetime, end_datetime) {
   
-  year_starts <- seq(start_date, end_date, by = "1 year")
-  year_ends <- lead(year_starts, default = end_date)
+  year_starts <- seq(start_datetime, end_datetime, by = "1 year")
+  year_ends <- lead(year_starts, default = end_datetime)
   
-  gen_all <- map_df(names(zones), function(country) {
+  gen_all <- map_df(names(zones), function(z) {
     map_df(seq_along(year_starts), function(i) {
       
       map_df(gen_types, possibly(function(gen_type) {
         gen_raw <- gen_per_prod_type(
-          eic = zones[country],
+          eic = zones[z],
           period_start = year_starts[i],
           period_end   = year_ends[i],
           gen_type     = gen_type,
@@ -23,7 +22,7 @@ download_gen_eu <- function(start_date, end_date) {
         
         gen_raw |>
           mutate(
-            country = country,
+            country = z,
             tech = recode(ts_mkt_psr_type,
                           "B16" = "Solar", 
                           "B19" = "Wind onshore"),
@@ -38,6 +37,7 @@ download_gen_eu <- function(start_date, end_date) {
     })
   })
   
+  # Complete missing combinations AFTER collecting all data
   gen_all |>
     complete(
       country, 
@@ -48,10 +48,10 @@ download_gen_eu <- function(start_date, end_date) {
 }
 
 # Download DAM price data 
-download_price_eu <- function(start_date, end_date) {
+download_price_eu <- function(zones, start_datetime, end_datetime) {
   
-  year_starts <- seq(start_date, end_date, by = "1 year")
-  year_ends <- lead(year_starts, default = end_date)
+  year_starts <- seq(start_datetime, end_datetime, by = "1 year")
+  year_ends <- lead(year_starts, default = end_datetime)
   
   map_df(names(zones), function(country) {
     map_df(seq_along(year_starts), function(i) {
@@ -71,20 +71,20 @@ download_price_eu <- function(start_date, end_date) {
         summarise(
           price_eur = mean(ts_point_price_amount, na.rm = TRUE),
           .groups = "drop"
-        ) |> 
-        filter(
-          hour >= start_date,
-          hour < end_date
         )
     })
-  })
+  }) |>
+    filter(
+      hour >= start_datetime,
+      hour < end_datetime
+    )
 }
 
 # Download total load data
-download_load_eu <- function(start_date, end_date) {
+download_load_eu <- function(zones, start_datetime, end_datetime) {
   
-  year_starts <- seq(start_date, end_date, by = "1 year")
-  year_ends <- lead(year_starts, default = end_date)
+  year_starts <- seq(start_datetime, end_datetime, by = "1 year")
+  year_ends <- lead(year_starts, default = end_datetime)
   
   map_df(names(zones), function(country) {
     map_df(seq_along(year_starts), function(i) {
@@ -104,11 +104,11 @@ download_load_eu <- function(start_date, end_date) {
         summarise(
           volume = mean(ts_point_quantity, na.rm = TRUE),
           .groups = "drop"
-        ) |> 
-        filter(
-          hour >= start_date,
-          hour < end_date
         )
     })
-  })
+  }) |>
+    filter(
+      hour >= start_datetime,
+      hour < end_datetime
+    )
 }
