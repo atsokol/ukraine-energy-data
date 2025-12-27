@@ -1,6 +1,6 @@
 
 #============================================================================
-# Functions to download data for EU countries from ENTSO-E
+# Functions to download data for Ukraine
 #============================================================================
 
 
@@ -62,6 +62,7 @@ download_dam_ua <- function(start_date, end_date) {
     transmute(
       country = "UA",
       hour = ymd_h(paste(format(date, "%Y-%m-%d"), hour - 1), tz = "UTC"),
+      date = date,
       price_uah = price,
       volume = volume
     ) 
@@ -96,7 +97,7 @@ download_yield_day <- function(
   vec <- fromJSON(data_raw, flatten = TRUE)
   output <- data.frame(
     date = date,
-    hour = seq(1,24),
+    hour = seq(1, 24),
     actual = vec[1:24],
     projected = vec[26:49]
   )
@@ -107,7 +108,7 @@ download_yield_day <- function(
 download_yield_list <- function(dates, gen) { 
   lapply(dates, function(day) {
     tryCatch({
-      download_yield_day(day = day, gen = gen)
+      download_yield_day(date = day, gen = gen)
     }, error = function(e) {
       message("Error downloading data for ", day, ": ", e)
       return(NULL)
