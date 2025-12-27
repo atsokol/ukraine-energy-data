@@ -1,4 +1,4 @@
-# RES Yield Data Download
+# Ukraine and EU Energy Data Download
 
 Automated data collection system for renewable energy generation, electricity prices, and load data from Ukraine and EU countries.
 
