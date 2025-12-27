@@ -55,7 +55,7 @@ jobs:
           git add "data/data_raw/load_EU.csv" || true
 
           if ! git diff --staged --quiet; then
-            git commit -m "Update UA and EU data"
+            git commit -m "Updated UA and EU data"
             git push
           else
             echo "No changes to commit"
