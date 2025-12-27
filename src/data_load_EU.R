@@ -21,8 +21,8 @@ zones <- c(
 gen_types <- c("B16", "B19") # Solar and Wind onshore
 
 # Define end date - convert to datetime
-end_date <- floor_date(today(), "month") - days(1)  # Last day of previous month
-end_datetime <- ymd_hms(paste(end_date, "23:00:00"), tz = "UTC")
+end_date <- floor_date(today(), "month")  # Last day of previous month
+end_datetime <- ymd_hms(paste(end_date, "00:00:00"), tz = "UTC")
 
 # Function to determine start date based on existing file
 get_start_datetime <- function(filepath, default_start = ymd_hms("2022-01-01 00:00:00", tz = "UTC")) {
