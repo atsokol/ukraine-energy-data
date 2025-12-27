@@ -3,16 +3,6 @@
 # Functions to download data for EU countries from ENTSO-E
 #============================================================================
 
-# ENTSO-E zones
-zones <- c(
-  PL = "10YPL-AREA-----S",
-  RO = "10YRO-TEL------P",
-  HU = "10YHU-MAVIR----U",
-  SK = "10YSK-SEPS-----K"
-)
-
-gen_types <- c("B16", "B19") # Solar and Wind onshore
-
 # Download RES generation data
 download_gen_eu <- function(start_date, end_date) {
   

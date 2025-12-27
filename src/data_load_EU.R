@@ -10,6 +10,16 @@ library(httr)
 
 source("src/helper_func_EU.R")
 
+# Define ENTSO-E zones and generation types
+zones <- c(
+  PL = "10YPL-AREA-----S",
+  RO = "10YRO-TEL------P",
+  HU = "10YHU-MAVIR----U",
+  SK = "10YSK-SEPS-----K"
+)
+
+gen_types <- c("B16", "B19") # Solar and Wind onshore
+
 # Define end date
 end_date <- floor_date(today(), "month") - days(1)  # Last day of previous month
 
