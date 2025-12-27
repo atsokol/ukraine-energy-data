@@ -6,8 +6,6 @@ library(readr)
 library(lubridate)
 library(entsoeapi)
 
-Sys.setenv(ENTSOE_PAT = "0b684c76-20b4-4b40-ba91-083056a4a00a")
-
 source("src/helper_func_EU.R")
 
 # Define ENTSO-E zones and generation types
@@ -90,22 +88,3 @@ if (load_start <= end_datetime) {
 } else {
   message("Load data is up to date")
 }
-
-# Check and fix hour column type
-# First, ensure gen_all has proper structure
-if (is.list(gen_all$hour) && !inherits(gen_all$hour, "POSIXct")) {
-  gen_all <- gen_all |>
-    unnest(cols = hour)
-}
-
-# Convert hour to POSIXct if needed
-gen_all <- gen_all |>
-  mutate(hour = as.POSIXct(hour, tz = "UTC"))
-
-# Filter THEN complete
-gen_all <- gen_all |>
-  filter(hour >= as.POSIXct(start_datetime, tz = "UTC"), 
-         hour < as.POSIXct(end_datetime, tz = "UTC"))
-
-gen_all <- gen_all |>
-  complete(zone, hour, tech, fill = list(gen_mw = 0))
