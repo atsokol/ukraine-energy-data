@@ -69,5 +69,5 @@ factor_m <- factor_d |>
   ) 
 
 # Write results to files
-write_csv(factor_d, "data/data_output/capacity_factors_daily.csv")
-write_csv(factor_m, "data/data_output/capacity_factors_monthly.csv")
+write_csv(factor_d, "data/data_output/capture_factors_daily.csv")
+write_csv(factor_m, "data/data_output/capture_factors_monthly.csv")

@@ -56,8 +56,8 @@ jobs:
           git add "data/data_raw/yield_RES_EU.csv" || true
           git add "data/data_raw/DAM_EU.csv" || true
           git add "data/data_raw/load_EU.csv" || true
-          git add "data/data_output/capacity_factors_daily.csv" || true
-          git add "data/data_output/capacity_factors_monthly.csv" || true
+          git add "data/data_output/capture_factors_daily.csv" || true
+          git add "data/data_output/capture_factors_monthly.csv" || true
 
           if ! git diff --staged --quiet; then
             git commit -m "Updated UA and EU data"
