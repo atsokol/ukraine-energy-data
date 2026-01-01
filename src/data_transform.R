@@ -36,7 +36,8 @@ data_ua <- left_join(
         tech = type
     ) |> 
     filter(
-        !is.na(gen_mw)
+        !is.na(gen_mw),
+        !is.na(price_eur_mwh)
     ) |> 
     mutate(date = as_date(hour)) |> 
     select(
@@ -55,7 +56,6 @@ data_all <- rbind(data_eu, select(data_ua, -volume))
 #=================================
 
 factor_d <- data_all |>
-  filter(country != NA)
   mutate(date = floor_date(hour, unit = "days")) |>
   group_by(country, tech, date) |>
   summarise(

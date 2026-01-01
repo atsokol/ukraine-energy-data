@@ -9,7 +9,6 @@ execute:
 ---
 
 ```{r}
-library(entsoeapi)
 library(readr)
 library(dplyr)
 library(lubridate)
@@ -17,208 +16,26 @@ library(tidyr)
 library(purrr)
 library(ggplot2)
 library(plotly)
-library(httr)
-library(jsonlite)
-
-Sys.setenv(ENTSOE_PAT = Sys.getenv("ENTSOE_PAT"))
-```
-
-```{r}
-zones <- c(
-  PL = "10YPL-AREA-----S",
-  RO = "10YRO-TEL------P",
-  HU = "10YHU-MAVIR----U",
-  SK = "10YSK-SEPS-----K"
-)
-
-gen_types <- c("B16", "B19") # Solar and Wind onshore
-
-# Create one-year intervals
-start_full <- ymd_hms("2022-01-01 00:00:00", tz = "UTC")
-end_full   <- ymd_hms("2025-12-01 00:00:00", tz = "UTC")
-
-year_starts <- seq(start_full, end_full, by = "1 year")
-year_ends <- lead(year_starts, default = end_full)
-
-# Download generation data for all countries
-gen_all <- map_df(names(zones), function(country) {
-  map_df(seq_along(year_starts), function(i) {
-    
-    # Call API separately for each generation type
-    map_df(gen_types, possibly(function(gen_type) {
-      gen_raw <- gen_per_prod_type(
-        eic = zones[country],
-        period_start = year_starts[i],
-        period_end   = year_ends[i],
-        gen_type     = gen_type,
-        tidy_output  = TRUE
-      )
-      
-      gen_raw |>
-        mutate(
-          country = country,
-          tech = recode(ts_mkt_psr_type,
-                        "B16" = "Solar", 
-                        "B19" = "Wind onshore"),
-          hour = floor_date(ts_point_dt_start, unit = "hour")
-        ) |>
-        group_by(country, hour, tech) |>
-        summarise(
-          gen_mw = mean(ts_point_quantity, na.rm = TRUE),
-          .groups = "drop"
-        )
-    }, otherwise = tibble()))
-  })
-})
-
-# Complete missing combinations after collecting all data
-gen_all <- gen_all |>
-  complete(
-    country, 
-    hour, 
-    tech, 
-    fill = list(gen_mw = 0)
-  )
-
-# Download price data for all countries (same logic)
-px_all <- map_df(names(zones), function(country) {
-  map_df(seq_along(year_starts), function(i) {
-    px_raw <- transm_day_ahead_prices(
-      eic = zones[country],
-      period_start = year_starts[i],
-      period_end   = year_ends[i],
-      tidy_output  = TRUE
-    )
-    
-    px_raw |>
-      mutate(
-        country = country,
-        hour = floor_date(ts_point_dt_start, unit = "hour")
-      ) |>
-      group_by(country, hour) |>
-      summarise(
-        price_eur = mean(ts_point_price_amount, na.rm = TRUE),
-        .groups = "drop"
-      ) |> 
-      filter(
-        hour >= start_full,
-        hour < end_full
-      )
-  })
-})
-
-# Download load data for all countries
-load_all <- map_df(names(zones), function(country) {
-  map_df(seq_along(year_starts), function(i) {
-    load_raw <- load_actual_total( 
-      eic = zones[country],
-      period_start = year_starts[i],
-      period_end   = year_ends[i],
-      tidy_output  = TRUE
-    )
-    
-    load_raw |>
-      mutate(
-        country = country,
-        hour = floor_date(ts_point_dt_start, unit = "hour")
-      ) |>
-      group_by(country, hour) |>
-      summarise(
-        load = mean(ts_point_quantity, na.rm = TRUE),
-        .groups = "drop"
-      ) |> 
-      filter(
-        hour >= start_full,
-        hour < end_full
-      )
-  })
-})
-
-# Combine generation and price data (without load for now)
-data <- gen_all |>
-  left_join(px_all, by = c("country", "hour")) |> 
-  left_join(load_all, by = c("country", "hour"))
 ```
 
 ```{r}
 
-# Download UAH/EUR fx data  --------------------------------------------
-get_nbu_fx <- function(valcode = "EUR",
-                       start_date,
-                       end_date ) {
-  
-  url <- glue::glue(
-  "https://bank.gov.ua/NBU_Exchange/exchange_site?start={format(start_date, '%Y%m%d')}&end={format(end_date, '%Y%m%d')}&valcode={valcode}&sort=exchangedate&order=desc&json"
-)
-  
-  resp <- GET(url)
-  
-  if (http_error(resp)) {
-    stop("Request failed: ", status_code(resp))
-  }
-  
-  fx_data <- content(resp, "text", encoding = "UTF-8") %>%
-    fromJSON() %>%
-    as_tibble() %>%
-    transmute(
-      date = dmy(exchangedate),
-      EURUAH = rate
-    ) %>%
-    arrange(date)
-  
-  return(fx_data)
-}
+# Combine EU generation and price data 
+gen_eu <- read_csv("../data/data_raw/yield_RES_EU.csv")
+price_eu <- read_csv("../data/data_raw/DAM_EU.csv")
+load_eu <- read_csv("../data/data_raw/load_EU.csv")
 
-fx <- get_nbu_fx(
-    valcode = "EUR",
-    start_date = start_full,
-    end_date = end_full
-  )
 
-# Download Ukrainian DAM data
-dates <- seq(start_full, end_full, by = "day")
+data_eu <- gen_eu |>
+  left_join(price_eu, by = c("country", "hour")) |> 
+  left_join(load_eu, by = c("country", "hour"))
 
-fetch_oree_day <- possibly(function(date, market = "DAM", zone = 2) {
-  url <- glue::glue(
-    "https://www.oree.com.ua/index.php/PXS/get_pxs_hdata/{format(date, '%d.%m.%Y')}/{market}/{zone}"
-  )
-  
-  resp <- GET(url)
-  
-  # if no data / error – return empty tibble
-  if (http_error(resp)) {
-    message("No data for ", date, " (HTTP error).")
-    return(tibble())
-  }
-  
-  txt  <- content(resp, as = "text", encoding = "UTF-8")
-  json <- fromJSON(txt)
-  
-  # json has: html, pricesData, amountsData, labels, colors
-  tibble(
-    date   = date,
-    hour   = json$labels,
-    price  = json$pricesData,
-    volume = json$amountsData
-  )
-}, otherwise = tibble())
+# Combine UA generation and price data
+price_ua <- read_csv("../data/data_raw/DAM_UA.csv")
 
-# Loop over all dates and combine ----------------------------------------
-
-dam_ua <- map_dfr(
-    dates,
-    ~fetch_oree_day(.x, market = "DAM", zone = 2)
-  ) |> 
-  transmute(
-    country = "UA",
-    hour = ymd_h(paste(format(date, "%Y-%m-%d"), hour - 1), tz = "UTC"),
-    price_uah = price,
-    volume = volume
-  ) 
-
-res_yield_ua <- rbind(
-    read_csv("data/data_output/data solar.csv") |> mutate(type = "Solar"),
-    read_csv("data/data_output/data wind.csv") |> mutate(type = "Wind onshore")
+gen_ua <- rbind(
+    read_csv("../data/data_raw/yield_solar_UA.csv") |> mutate(type = "Solar"),
+    read_csv("../data/data_raw/yield_wind_UA.csv") |> mutate(type = "Wind onshore")
 ) |> 
     transmute(
         hour = ymd_h(paste(format(date, "%Y-%m-%d"), hour - 1), tz = "UTC"),
@@ -227,8 +44,8 @@ res_yield_ua <- rbind(
         )
 
 data_ua <- left_join(
-    dam_ua,
-    res_yield_ua,
+    price_ua,
+    gen_ua,
     by = c("hour" = "hour")
 ) |> 
     rename(
@@ -238,41 +55,45 @@ data_ua <- left_join(
         !is.na(gen_mw)
     ) |> 
     mutate(date = as_date(hour)) |> 
-    left_join(
-        fx,
-        by = c("date" = "date")
-    ) |> 
-    mutate(
-        price_eur_mwh = price_uah / EURUAH
-    ) |> 
     select(
         country,
         hour,
         tech,
         gen_mw,
-        price_eur_mwh,
-        load_mw = volume
+        price_eur = price_eur_mwh,
+        volume
     )
 
-data_all <- rbind(data, data_ua)
+data_all <- rbind(data_eu, data_ua)
 # write_csv(data_all, "data/data_output/data_eu_ua.csv")
+
 ```
 
 ```{r}
 # Calculate capacity factors for each generation type
+# # monthly median of daily values
 
-factor_m <- data_all |>
-  mutate(date = floor_date(hour, unit = "months")) |>
+factor_d <- data_all |>
+  mutate(date = floor_date(hour, unit = "days")) |>
   group_by(country, tech, date) |>
   summarise(
-    price_res = sum(price_eur_mwh * gen_mw, na.rm = TRUE) / sum(gen_mw, na.rm = TRUE),
-    price_tot = sum(price_eur_mwh * load_mw, na.rm = TRUE) / sum(load_mw, na.rm = TRUE),
-    cap_f = price_res / price_tot,
+    price_res = sum(price_eur * gen_mw, na.rm = TRUE) / sum(gen_mw, na.rm = TRUE),
+    price_base = mean(price_eur, na.rm = TRUE),
+    cap_factor = price_res / price_base,
     .groups = "drop") 
 
-ggplot(factor_m, aes(x = date, y = cap_f, color = tech)) +
-  geom_line() +
+factor_m <- factor_d |> 
+  group_by(country, tech, date = floor_date(date, unit = "months")) |> 
+  summarise(
+    cap_factor = median(cap_factor, na.rm = TRUE),
+    .groups = "drop"
+  ) 
+
+ggplot(factor_m, aes(x = date, y = cap_factor, color = tech)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(se=FALSE) +
   facet_wrap(~country) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   labs(
     title = "Solar and Wind Capture Factors",
     x = "",
@@ -281,22 +102,29 @@ ggplot(factor_m, aes(x = date, y = cap_f, color = tech)) +
   ) +
   theme_minimal()
 
+# ggplot(factor_d |> filter(country == "UA"), 
+#     aes(x = date, y = cap_factor, color = tech)) +
+#   geom_point(alpha = 0.3) +
+#   geom_smooth(se=FALSE) +
+#   facet_wrap(~country) +
+#   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+#   labs(
+#     title = "Solar and Wind Capture Factors",
+#     x = "",
+#     y = "",
+#     color = ""
+#   ) +
+#   theme_minimal()
 
-# Calculate seasonal capture factors with year separation
-factor_seas <- data_all |>
+
+# Seasonal variation of capture factors
+factor_seas <- factor_m |> 
   mutate(
-    month = month(hour, label = TRUE),
-    year = year(hour)
-  ) |>
-  group_by(country, tech, year, month) |>
-  summarise(
-    price_res = sum(price_eur_mwh * gen_mw, na.rm = TRUE) / sum(gen_mw, na.rm = TRUE),
-    price_tot = sum(price_eur_mwh * load_mw, na.rm = TRUE) / sum(load_mw, na.rm = TRUE),
-    cap_f = price_res / price_tot,
-    .groups = "drop"
+    month = month(date, label = TRUE),
+    year = year(date) |> as.factor()
   )
 
-ggplot(factor_seas, aes(x = month, y = cap_f, color = factor(year), group = year)) +
+ggplot(factor_seas, aes(x = month, y = cap_factor, color = year, group = year)) +
     geom_point(alpha = 0.3) +
     geom_smooth(se=FALSE) +
     geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
@@ -310,26 +138,55 @@ ggplot(factor_seas, aes(x = month, y = cap_f, color = factor(year), group = year
     ) +
     theme_minimal()
 
-factor_y <- data_all |>
-  mutate(date = floor_date(hour, unit = "months")) |>
-  group_by(country, tech, date) |>
+```
+
+```{r}
+
+price_base <- data_all |>
+  mutate(date = floor_date(hour, unit = "days")) |>
+  group_by(country, date) |>
   summarise(
-    price_res = sum(price_eur_mwh * gen_mw, na.rm = TRUE) / sum(gen_mw, na.rm = TRUE),
-    price_tot = sum(price_eur_mwh * load_mw, na.rm = TRUE) / sum(load_mw, na.rm = TRUE),
-    cap_f = price_res / price_tot,
-    .groups = "drop") |> 
-  mutate(date = floor_date(date, unit = "years")) |>
-  group_by(country, tech, date) |>
-  summarise(
-    cap_f = mean(cap_f, na.rm = TRUE),
+    price = mean(price_eur, na.rm = TRUE), 
     .groups = "drop"
   )
 
-ggplot(factor_y, aes(x = date, y = cap_f, color = country)) +
-  geom_point() +
-  facet_wrap(~tech) +
+g5 <- ggplot(price_base, aes(x = date, y = price, colour = country)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(span = 0.2, se=FALSE) +
   labs(
-    title = "Solar and Wind Capture Factors",
+    title = "Day-Ahead Baseload Electricity Prices",
+    x = "",
+    y = "EUR/MWh"
+  ) +
+  theme_minimal()
+
+ggplotly(g5)
+```
+
+```{r}
+
+ggplot(
+  data_all |> 
+    filter(country == "UA") |> 
+    group_by(year = factor(year(hour))) |>
+    mutate(
+      gen_ann = mean(gen_mw, na.rm = TRUE)
+    ) |> 
+    group_by(hour = hour(hour), year, .add = TRUE) |> 
+    summarise(
+      gen_mw = mean(gen_mw, na.rm = TRUE) / first(gen_ann),
+      .groups = "drop"
+    ),
+  aes(x = hour, y = gen_mw, color = year)
+) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x, bs = "cs"),
+    se = FALSE
+  ) +
+  labs(
+    title = "Median hourly generation, Ukraine 2025",
     x = "",
     y = "",
     color = ""
@@ -339,22 +196,293 @@ ggplot(factor_y, aes(x = date, y = cap_f, color = country)) +
 ```
 
 ```{r}
+price_cap <- read_csv("../data/data_raw/UA price caps.csv")
 
-price_daily <- data_all |>
-  mutate(date = floor_date(hour, unit = "months")) |>
-  group_by(country, date) |>
-  summarise(
-    price = sum(price_eur_mwh * load_mw, na.rm = TRUE) / sum(load_mw, na.rm=TRUE), 
-    .groups = "drop"
-  )
+ojs_define(price_caps = price_cap)
+ojs_define(
+  data_all = data_all,
+  factor_m = factor_m,
+  factor_seas = factor_seas,
+  price_base = price_base
+)
+```
 
-ggplot(price_daily, aes(x = date, y = price, colour = country)) +
-  geom_line() +
-  labs(
-    title = "Daily Day-Ahead Prices in Ukraine",
-    x = "",
-    y = "Price (UAH/MWh)"
-  ) +
-  theme_minimal()
+```{ojs}
 
+system = ["ОЕС України", "ОЕС України (синхронізована з ENTSO-E)"] 
+
+caps = transpose(price_caps)
+  .filter(d => system.includes(d.energy_system))
+  .filter(d => ["2022-02-28","2023-07-01"].includes(d.date))
+
+Plot.plot({
+  title: "Evolution of electricity price caps in Ukraine",
+  marginLeft: 50,
+  marginRight: 100,
+  width: 800,
+  height: 300,
+  x: { line: true, label: "hour of day" },
+  y: { nice: true, label: "UAH / MWh", tickFormat: d3.format(".0f") },
+
+  color: {
+    range: d3.schemeYlGnBu[5],
+    type: "ordinal",
+    legend: true,
+    label: "Date"
+  },
+
+  marks: [
+    Plot.areaY(caps, {
+      x: d => d.hour,
+      y1: "price_min",
+      y2: "price_max",
+      fill: "date",
+      stroke: "lightgrey",
+      reverse: true,
+      curve: "step-before",
+      tip: true
+    }),
+     Plot.arrow([{x1: 4, y1: 4000, x2: 6.5, y2: 3500}], {
+      x1: "x1",
+      y1: "y1", 
+      x2: "x2",
+      y2: "y2",
+      stroke: "grey",
+      strokeWidth: 1.5,
+      bend: -20
+    }),
+    Plot.text([{x: 4, y: 4000, label: '"narrow corridor"'}], {
+      x: "x",
+      y: "y",
+      text: "label",
+      dy: -10,
+      fontSize: 14,
+      fill: "grey"
+    }),
+    Plot.arrow([{x1: 14, y1: 7000, x2: 14, y2: 6000}], {
+      x1: "x1",
+      y1: "y1", 
+      x2: "x2",
+      y2: "y2",
+      stroke: "grey",
+      strokeWidth: 1.5,
+      bend: -20
+    }),
+    Plot.text([{x: 14, y: 7000, label: 'Price caps widened from July 2023'}], {
+      x: "x",
+      y: "y",
+      text: "label",
+      dy: -10,
+      fontSize: 14,
+      fill: "grey"
+    }),  
+    Plot.ruleY([0])
+  ]
+});
+
+```
+
+```{ojs}
+// Chart 1: Solar and Wind Capture Factors
+Plot.plot({
+  title: "Solar and Wind Capture Factors",
+  marginLeft: 50,
+  width: 800,
+  height: 300,
+  x: { label: null },
+  y: { 
+    label: "Capture Factor",
+    tickFormat: d => d3.format(".0%")(d)
+  },
+  color: { 
+    legend: true,
+    label: "Technology"
+  },
+  marks: [
+    Plot.dot(transpose(factor_m), {
+      x: d => new Date(d.date),
+      y: "cap_factor",
+      fx: "country",
+      fill: "tech",
+      fillOpacity: 0.3,
+    }),
+    Plot.line(transpose(factor_m), 
+      Plot.binX(
+        { y: "mean" },
+        {
+          x: d => new Date(d.date),
+          y: "cap_factor",
+          fx: "country",
+          stroke: "tech",
+          curve: "bundle",
+          tension: 0.1,
+          thresholds: 20
+        }
+      )
+    )
+  ]
+})
+```
+
+```{ojs}
+// Chart 2: Seasonal Variation of Capture Factors
+{
+  const data = transpose(factor_seas).map(d => ({
+    ...d,
+    date: new Date(d.date),
+    month: d.month,
+    year: String(d.year)
+  }));
+
+  return Plot.plot({
+    title: "Solar and Wind Capture Factors by Year",
+    marginLeft: 50,
+    width: 900,
+    height: 600,
+    facet: {
+      data: data,
+      y: "tech",
+      x: "country",
+      marginRight: 80,
+      marginTop: 40
+    },
+    x: { 
+      label: null,
+      tickFormat: (d, i) => i % 3 === 0 ? d : ""
+    },
+    y: { 
+      label: "Capture Factor",
+      grid: true
+    },
+    color: { 
+      legend: true,
+      label: "Year"
+    },
+    marks: [
+      Plot.ruleY([1], { stroke: "black", strokeDasharray: "4,4" }),
+      Plot.dot(data, {
+        x: "month",
+        y: "cap_factor",
+        fill: "year",
+        fillOpacity: 0.3,
+        facet: "exclude"
+      }),
+      Plot.line(data,
+        Plot.groupZ(
+          { y: "mean" },
+          {
+            x: "month",
+            y: "cap_factor",
+            stroke: "year",
+            z: "year",
+            curve: "catmull-rom"
+          }
+        )
+      )
+    ]
+  });
+}
+```
+
+```{ojs}
+// Chart 3: Day-Ahead Baseload Electricity Prices
+Plot.plot({
+  title: "Day-Ahead Baseload Electricity Prices",
+  marginLeft: 50,
+  width: 900,
+  height: 400,
+  x: { label: null },
+  y: { 
+    label: "EUR/MWh",
+    grid: true
+  },
+  color: { 
+    legend: true,
+    label: "Country"
+  },
+  marks: [
+    Plot.dot(transpose(price_base), {
+      x: d => new Date(d.date),
+      y: "price",
+      fill: "country",
+      fillOpacity: 0.1
+    }),
+    Plot.line(transpose(price_base),
+      Plot.binX(
+        { y: "mean" },
+        {
+          x: d => new Date(d.date),
+          y: "price",
+          stroke: "country",
+          curve: "catmull-rom",
+          thresholds: 30
+        }
+      )
+    )
+  ]
+})
+```
+
+```{ojs}
+// Chart 4: Median Hourly Generation Ukraine
+{
+  const ua_data = transpose(data_all)
+    .filter(d => d.country === "UA")
+    .map(d => ({
+      ...d,
+      hour_of_day: new Date(d.hour).getUTCHours(),
+      year: String(new Date(d.hour).getUTCFullYear())
+    }));
+
+  const aggregated = d3.rollup(
+    ua_data,
+    v => {
+      const ann_mean = d3.mean(v, d => d.gen_mw);
+      return d3.rollup(
+        v,
+        v2 => d3.mean(v2, d => d.gen_mw) / ann_mean,
+        d => d.hour_of_day
+      );
+    },
+    d => d.year
+  );
+
+  const plot_data = Array.from(aggregated, ([year, hours]) =>
+    Array.from(hours, ([hour, gen]) => ({ year, hour, gen }))
+  ).flat();
+
+  return Plot.plot({
+    title: "Median hourly generation, Ukraine",
+    marginLeft: 50,
+    width: 900,
+    height: 400,
+    x: { 
+      label: "Hour of day",
+      domain: d3.range(0, 24)
+    },
+    y: { 
+      label: "Normalized generation",
+      grid: true
+    },
+    color: { 
+      legend: true,
+      label: "Year"
+    },
+    marks: [
+      Plot.ruleY([1], { stroke: "black", strokeDasharray: "4,4" }),
+      Plot.line(plot_data,
+        Plot.groupZ(
+          { y: "mean" },
+          {
+            x: "hour",
+            y: "gen",
+            stroke: "year",
+            z: "year",
+            curve: "catmull-rom"
+          }
+        )
+      )
+    ]
+  });
+}
 ```
