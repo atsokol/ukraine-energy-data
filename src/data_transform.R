@@ -1,21 +1,21 @@
 library(tidyverse)
 
 # Combine EU generation and price data 
-gen_eu <- read_csv("data/data_raw/yield_RES_EU.csv")
-price_eu <- read_csv("data/data_raw/DAM_EU.csv")
-load_eu <- read_csv("data/data_raw/load_EU.csv")
+if (!exists("gen_eu")) gen_eu <- read_csv("data/data_raw/yield_RES_EU.csv")
+if (!exists("price_eu")) price_eu <- read_csv("data/data_raw/DAM_EU.csv")
 
 
 data_eu <- gen_eu |>
-  left_join(price_eu, by = c("country", "hour"), relationship = "many-to-one") |> 
-  left_join(load_eu, by = c("country", "hour"), relationship = "many-to-one")
+  left_join(price_eu, by = c("country", "hour"), relationship = "many-to-one") 
 
 # Combine UA generation and price data
-price_ua <- read_csv("data/data_raw/DAM_UA.csv")
+if (!exists("price_ua")) price_ua <- read_csv("data/data_raw/DAM_UA.csv")
+if (!exists("solar_ua")) solar_ua <- read_csv("data/data_raw/yield_solar_UA.csv") 
+if (!exists("wind_ua")) wind_ua <- read_csv("data/data_raw/yield_wind_UA.csv") 
 
 gen_ua <- rbind(
-    read_csv("data/data_raw/yield_solar_UA.csv") |> mutate(type = "Solar"),
-    read_csv("data/data_raw/yield_wind_UA.csv") |> mutate(type = "Wind onshore")
+  solar_ua |> mutate(type = "Solar"), 
+  wind_ua |> mutate(type = "Wind onshore")
 ) |> 
     transmute(
         hour = ymd_h(paste(format(date, "%Y-%m-%d"), hour - 1), tz = "UTC"),
@@ -41,8 +41,7 @@ data_ua <- left_join(
         hour,
         tech,
         gen_mw,
-        price_eur = price_eur_mwh,
-        volume
+        price_eur = price_eur_mwh
     )
 
 data_all <- rbind(data_eu, data_ua)

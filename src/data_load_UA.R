@@ -40,12 +40,12 @@ if (dam_start <= end_date) {
   
   if (file.exists("data/data_raw/DAM_UA.csv")) {
     existing_dam <- read_csv("data/data_raw/DAM_UA.csv", show_col_types = FALSE)
-    dam_ua <- bind_rows(existing_dam, new_dam)
+    price_ua <- bind_rows(existing_dam, new_dam)
   } else {
-    dam_ua <- new_dam
+    price_ua <- new_dam
   }
   
-  write_csv(dam_ua, "data/data_raw/DAM_UA.csv")
+  write_csv(price_ua, "data/data_raw/DAM_UA.csv")
   message("DAM data updated from ", dam_start, " to ", end_date)
 } else {
   message("DAM data is up to date")
@@ -60,12 +60,12 @@ if (solar_start <= end_date) {
   
   if (file.exists("data/data_raw/yield_solar_UA.csv")) {
     existing_solar <- read_csv("data/data_raw/yield_solar_UA.csv", show_col_types = FALSE)
-    solar_data <- bind_rows(existing_solar, new_solar)
+    solar_ua <- bind_rows(existing_solar, new_solar)
   } else {
-    solar_data <- new_solar
+    solar_ua <- new_solar
   }
   
-  write_csv(solar_data, "data/data_raw/yield_solar_UA.csv")
+  write_csv(solar_ua, "data/data_raw/yield_solar_UA.csv")
   message("Solar yield data updated from ", solar_start, " to ", end_date)
 } else {
   message("Solar yield data is up to date")
@@ -80,12 +80,12 @@ if (wind_start <= end_date) {
   
   if (file.exists("data/data_raw/yield_wind_UA.csv")) {
     existing_wind <- read_csv("data/data_raw/yield_wind_UA.csv", show_col_types = FALSE)
-    wind_data <- bind_rows(existing_wind, new_wind)
+    wind_ua <- bind_rows(existing_wind, new_wind)
   } else {
-    wind_data <- new_wind
+    wind_ua <- new_wind
   }
   
-  write_csv(wind_data, "data/data_raw/yield_wind_UA.csv")
+  write_csv(wind_ua, "data/data_raw/yield_wind_UA.csv")
   message("Wind yield data updated from ", wind_start, " to ", end_date)
 } else {
   message("Wind yield data is up to date")
