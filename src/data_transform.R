@@ -81,7 +81,7 @@ write_csv(factor_m, "data/data_output/capture_factors_monthly.csv")
 #=================================
 
 price_wgt <- price_ua |>
-  mutate(date = floor_date(hour, unit = "days") |> as_date()) |>
+  mutate(date = as_date(hour, tz = "UTC")) |>
   group_by(country, date) |>
   summarise(
     price_uah = sum(price_uah * volume, na.rm = TRUE) / sum(volume, na.rm = TRUE),
