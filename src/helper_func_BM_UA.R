@@ -1,5 +1,5 @@
 #============================================================================
-# Functions to download balancing market data for Ukraine
+# Functions to download balancing market data
 #============================================================================
 
 library(chromote)
@@ -9,6 +9,10 @@ library(stringr)
 library(dplyr)
 library(tidyr)
 library(lubridate)
+
+#============================================================================
+# Ukraine Balancing Market Functions
+#============================================================================
 
 # Function to get all BM file URLs from the website
 get_all_bm_urls <- function() {

@@ -10,6 +10,7 @@ library(entsoeapi)
 Sys.setenv(ENTSOE_PAT = Sys.getenv("ENTSOE_PAT"))
 
 source("src/helper_func_EU.R")
+source("src/helper_func_BM_entsoe.R")
 
 # Define ENTSO-E zones and generation types
 zones <- c(
@@ -24,31 +25,11 @@ gen_types <- c("B16", "B19") # Solar and Wind onshore
 # Define end date (as Date object)
 end_date <- floor_date(today(), "month") - days(1)  # Last day of previous month
 
-# Function to determine start date based on existing file (returns Date)
-get_start_date <- function(filepath, default_start = as.Date("2022-01-01")) {
-  if (file.exists(filepath)) {
-    existing_data <- read_csv(filepath, show_col_types = FALSE)
-    
-    # Parse ISO 8601 datetime format and convert to Date
-    parsed_dates <- as.Date(ymd_hms(existing_data$hour, tz = "UTC"))
-    last_date <- max(parsed_dates, na.rm = TRUE)
-    
-    # Check if parsing was successful
-    if (is.na(last_date) || !is.finite(last_date)) {
-      warning("Could not parse dates from ", filepath, ". Using default start date.")
-      return(default_start)
-    }
-    
-    return(last_date + days(1))
-  } else {
-    return(default_start)
-  }
-}
-
 # Determine start dates for each dataset (as Date objects)
 gen_start <- get_start_date("data/data_raw/yield_RES_EU.csv")
 price_start <- get_start_date("data/data_raw/DAM_EU.csv")
 load_start <- get_start_date("data/data_raw/load_EU.csv")
+bm_start <- get_start_date("data/data_raw/BM_EU.csv", date_col = "datetime")
 
 # Download and update RES generation data
 if (gen_start <= end_date) {
@@ -57,16 +38,7 @@ if (gen_start <= end_date) {
   end_date_dt <- ymd_hms(paste(end_date + days(1), "00:00:00"), tz = "UTC")
   
   new_gen <- download_gen_eu(zones, gen_types, gen_start_dt, end_date_dt)
-  
-  if (file.exists("data/data_raw/yield_RES_EU.csv")) {
-    existing_gen <- read_csv("data/data_raw/yield_RES_EU.csv", show_col_types = FALSE)
-    gen_eu <- bind_rows(existing_gen, new_gen)
-  } else {
-    gen_eu <- new_gen
-  }
-  
-  write_csv(gen_eu, "data/data_raw/yield_RES_EU.csv")
-  message("RES generation data updated from ", gen_start, " to ", end_date)
+  update_csv_file(new_gen, "data/data_raw/yield_RES_EU.csv", gen_start, end_date)
 } else {
   message("RES generation data is up to date")
 }
@@ -78,16 +50,7 @@ if (price_start <= end_date) {
   end_date_dt <- ymd_hms(paste(end_date + days(1), "00:00:00"), tz = "UTC")
   
   new_price <- download_price_eu(zones, price_start_dt, end_date_dt)
-  
-  if (file.exists("data/data_raw/DAM_EU.csv")) {
-    existing_price <- read_csv("data/data_raw/DAM_EU.csv", show_col_types = FALSE)
-    price_eu <- bind_rows(existing_price, new_price)
-  } else {
-    price_eu <- new_price
-  }
-  
-  write_csv(price_eu, "data/data_raw/DAM_EU.csv")
-  message("DAM price data updated from ", price_start, " to ", end_date)
+  update_csv_file(new_price, "data/data_raw/DAM_EU.csv", price_start, end_date)
 } else {
   message("DAM price data is up to date")
 }
@@ -99,16 +62,23 @@ if (load_start <= end_date) {
   end_date_dt <- ymd_hms(paste(end_date + days(1), "00:00:00"), tz = "UTC")
   
   new_load <- download_load_eu(zones, load_start_dt, end_date_dt)
-  
-  if (file.exists("data/data_raw/load_EU.csv")) {
-    existing_load <- read_csv("data/data_raw/load_EU.csv", show_col_types = FALSE)
-    load_eu <- bind_rows(existing_load, new_load)
-  } else {
-    load_eu <- new_load
-  }
-  
-  write_csv(load_eu, "data/data_raw/load_EU.csv")
-  message("Load data updated from ", load_start, " to ", end_date)
+  update_csv_file(new_load, "data/data_raw/load_EU.csv", load_start, end_date)
 } else {
   message("Load data is up to date")
 }
+
+# Download and update balancing market price data
+if (bm_start <= end_date) {
+  # Convert Date to datetime for API calls
+  bm_start_dt <- ymd_hms(paste(bm_start, "00:00:00"), tz = "UTC")
+  end_date_dt <- ymd_hms(paste(end_date + days(1), "00:00:00"), tz = "UTC")
+  
+  new_bm <- download_balancing_prices_eu(zones, bm_start_dt, end_date_dt, chunk_days = 90)
+  update_csv_file(new_bm, "data/data_raw/BM_EU.csv", bm_start, end_date)
+} else {
+  message("Balancing market price data is up to date")
+}
+
+# bm_start_dt <- ymd_hms(paste("2024-09-17", "00:00:00"), tz = "UTC")
+# end_date_dt <- ymd_hms(paste("2025-12-31", "23:45:00"), tz = "UTC")
+# new_bm <- download_balancing_prices_eu(zones["PL"], bm_start_dt, end_date_dt, chunk_days = 60)

@@ -3,3 +3,8 @@
 .RData
 .Ruserdata
 .Renviron
+.DS_Store
+
+# Large data files
+data/data_raw/*.csv
+data/data_output/*.csv

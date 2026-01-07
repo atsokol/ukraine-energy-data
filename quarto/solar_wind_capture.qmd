@@ -196,293 +196,81 @@ ggplot(
 ```
 
 ```{r}
-price_cap <- read_csv("../data/data_raw/UA price caps.csv")
+price_dam <- read_csv("/Users/andrii/Documents/R files/_My projects/RES data download/data/data_raw/DAM_UA.csv")
+bm_data <- read_csv("/Users/andrii/Documents/R files/_My projects/RES data download/data/data_raw/BM_UA.csv")
 
-ojs_define(price_caps = price_cap)
-ojs_define(
-  data_all = data_all,
-  factor_m = factor_m,
-  factor_seas = factor_seas,
-  price_base = price_base
-)
-```
+data_h <- bm_data |> 
+  left_join(price_dam |> select(hour, price_uah, volume), by = c("hour" = "hour")) |> 
+  rename(
+    price_dam = price_uah,
+    volume_dam = volume
+  ) |>
+    mutate(
+      spread_up = price_up - price_dam,
+      spread_down = price_dam - price_down
+    ) 
 
-```{ojs}
+data_h |>
+  pivot_longer(
+    cols = matches("_(up|down)$"),
+    names_to = c(".value", "side"),
+    names_pattern = "(.*)_(up|down)$"
+  ) |>
+  mutate(side = factor(side)) |>
+  group_by(year = factor(year(hour)), hour = hour(hour), side) |>
+  summarise(
+    spread = median(spread, na.rm = TRUE),
+    volume = median(volume, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  pivot_longer(
+    cols = c(spread, volume),
+    names_to = "type",
+    values_to = "value"
+  ) |>
+  ggplot(aes(x = hour, y = value, color = year)) +
+    geom_smooth(
+      method = "gam",
+      formula = y ~ s(x, bs = "cs"),
+      se = FALSE
+    ) +
+    facet_grid(cols = vars(side), rows = vars(type), scales = "free_y") +
+    labs(
+      title = "Intraday Price Spreads vs Day-Ahead Market",
+      x = "",
+      y = "Spread (UAH/MWh)"
+    ) +
+    theme_minimal()
 
-system = ["ОЕС України", "ОЕС України (синхронізована з ENTSO-E)"] 
+data_d <- data_h |> 
+  group_by(date = as_date(hour)) |>
+  summarise(
+    spread_up = sum(pmax(spread_up, 0) * volume_up, na.rm = TRUE) / sum(volume_up, na.rm = TRUE),
+    spread_down = sum(pmax(spread_down, 0) * volume_down, na.rm = TRUE) / sum(volume_down, na.rm = TRUE),
+    spread_tot = spread_up + spread_down,
+    volume_up = sum(volume_up, na.rm = TRUE) / 24,
+    volume_down = sum(volume_down, na.rm = TRUE) / 24,
+    volume_tot = volume_up + volume_down,
+    .groups = "drop"
+  ) |> 
+  pivot_longer(
+    cols = matches("_(up|down|tot)$"),
+    names_to = c(".value", "type"),
+    names_pattern = "(.*)_(up|down|tot)$"
+  ) |> 
+  mutate(type = factor(type))
 
-caps = transpose(price_caps)
-  .filter(d => system.includes(d.energy_system))
-  .filter(d => ["2022-02-28","2023-07-01"].includes(d.date))
+ggplot(data_d, aes(x = date)) +
+  geom_point(aes(y = spread, color = type), alpha = 0.1) +
+  geom_smooth(aes(y = spread, color = type), se=FALSE) +
+  facet_grid(col = vars(type)) +
+  theme_minimal()
 
-Plot.plot({
-  title: "Evolution of electricity price caps in Ukraine",
-  marginLeft: 50,
-  marginRight: 100,
-  width: 800,
-  height: 300,
-  x: { line: true, label: "hour of day" },
-  y: { nice: true, label: "UAH / MWh", tickFormat: d3.format(".0f") },
 
-  color: {
-    range: d3.schemeYlGnBu[5],
-    type: "ordinal",
-    legend: true,
-    label: "Date"
-  },
+ggplot(data_d, aes(x = date)) +
+  geom_point(aes(y = volume, color = type), alpha = 0.1) +
+  geom_smooth(aes(y = volume, color = type), se=FALSE) +
+  facet_grid(col = vars(type)) +
+  theme_minimal()
 
-  marks: [
-    Plot.areaY(caps, {
-      x: d => d.hour,
-      y1: "price_min",
-      y2: "price_max",
-      fill: "date",
-      stroke: "lightgrey",
-      reverse: true,
-      curve: "step-before",
-      tip: true
-    }),
-     Plot.arrow([{x1: 4, y1: 4000, x2: 6.5, y2: 3500}], {
-      x1: "x1",
-      y1: "y1", 
-      x2: "x2",
-      y2: "y2",
-      stroke: "grey",
-      strokeWidth: 1.5,
-      bend: -20
-    }),
-    Plot.text([{x: 4, y: 4000, label: '"narrow corridor"'}], {
-      x: "x",
-      y: "y",
-      text: "label",
-      dy: -10,
-      fontSize: 14,
-      fill: "grey"
-    }),
-    Plot.arrow([{x1: 14, y1: 7000, x2: 14, y2: 6000}], {
-      x1: "x1",
-      y1: "y1", 
-      x2: "x2",
-      y2: "y2",
-      stroke: "grey",
-      strokeWidth: 1.5,
-      bend: -20
-    }),
-    Plot.text([{x: 14, y: 7000, label: 'Price caps widened from July 2023'}], {
-      x: "x",
-      y: "y",
-      text: "label",
-      dy: -10,
-      fontSize: 14,
-      fill: "grey"
-    }),  
-    Plot.ruleY([0])
-  ]
-});
-
-```
-
-```{ojs}
-// Chart 1: Solar and Wind Capture Factors
-Plot.plot({
-  title: "Solar and Wind Capture Factors",
-  marginLeft: 50,
-  width: 800,
-  height: 300,
-  x: { label: null },
-  y: { 
-    label: "Capture Factor",
-    tickFormat: d => d3.format(".0%")(d)
-  },
-  color: { 
-    legend: true,
-    label: "Technology"
-  },
-  marks: [
-    Plot.dot(transpose(factor_m), {
-      x: d => new Date(d.date),
-      y: "cap_factor",
-      fx: "country",
-      fill: "tech",
-      fillOpacity: 0.3,
-    }),
-    Plot.line(transpose(factor_m), 
-      Plot.binX(
-        { y: "mean" },
-        {
-          x: d => new Date(d.date),
-          y: "cap_factor",
-          fx: "country",
-          stroke: "tech",
-          curve: "bundle",
-          tension: 0.1,
-          thresholds: 20
-        }
-      )
-    )
-  ]
-})
-```
-
-```{ojs}
-// Chart 2: Seasonal Variation of Capture Factors
-{
-  const data = transpose(factor_seas).map(d => ({
-    ...d,
-    date: new Date(d.date),
-    month: d.month,
-    year: String(d.year)
-  }));
-
-  return Plot.plot({
-    title: "Solar and Wind Capture Factors by Year",
-    marginLeft: 50,
-    width: 900,
-    height: 600,
-    facet: {
-      data: data,
-      y: "tech",
-      x: "country",
-      marginRight: 80,
-      marginTop: 40
-    },
-    x: { 
-      label: null,
-      tickFormat: (d, i) => i % 3 === 0 ? d : ""
-    },
-    y: { 
-      label: "Capture Factor",
-      grid: true
-    },
-    color: { 
-      legend: true,
-      label: "Year"
-    },
-    marks: [
-      Plot.ruleY([1], { stroke: "black", strokeDasharray: "4,4" }),
-      Plot.dot(data, {
-        x: "month",
-        y: "cap_factor",
-        fill: "year",
-        fillOpacity: 0.3,
-        facet: "exclude"
-      }),
-      Plot.line(data,
-        Plot.groupZ(
-          { y: "mean" },
-          {
-            x: "month",
-            y: "cap_factor",
-            stroke: "year",
-            z: "year",
-            curve: "catmull-rom"
-          }
-        )
-      )
-    ]
-  });
-}
-```
-
-```{ojs}
-// Chart 3: Day-Ahead Baseload Electricity Prices
-Plot.plot({
-  title: "Day-Ahead Baseload Electricity Prices",
-  marginLeft: 50,
-  width: 900,
-  height: 400,
-  x: { label: null },
-  y: { 
-    label: "EUR/MWh",
-    grid: true
-  },
-  color: { 
-    legend: true,
-    label: "Country"
-  },
-  marks: [
-    Plot.dot(transpose(price_base), {
-      x: d => new Date(d.date),
-      y: "price",
-      fill: "country",
-      fillOpacity: 0.1
-    }),
-    Plot.line(transpose(price_base),
-      Plot.binX(
-        { y: "mean" },
-        {
-          x: d => new Date(d.date),
-          y: "price",
-          stroke: "country",
-          curve: "catmull-rom",
-          thresholds: 30
-        }
-      )
-    )
-  ]
-})
-```
-
-```{ojs}
-// Chart 4: Median Hourly Generation Ukraine
-{
-  const ua_data = transpose(data_all)
-    .filter(d => d.country === "UA")
-    .map(d => ({
-      ...d,
-      hour_of_day: new Date(d.hour).getUTCHours(),
-      year: String(new Date(d.hour).getUTCFullYear())
-    }));
-
-  const aggregated = d3.rollup(
-    ua_data,
-    v => {
-      const ann_mean = d3.mean(v, d => d.gen_mw);
-      return d3.rollup(
-        v,
-        v2 => d3.mean(v2, d => d.gen_mw) / ann_mean,
-        d => d.hour_of_day
-      );
-    },
-    d => d.year
-  );
-
-  const plot_data = Array.from(aggregated, ([year, hours]) =>
-    Array.from(hours, ([hour, gen]) => ({ year, hour, gen }))
-  ).flat();
-
-  return Plot.plot({
-    title: "Median hourly generation, Ukraine",
-    marginLeft: 50,
-    width: 900,
-    height: 400,
-    x: { 
-      label: "Hour of day",
-      domain: d3.range(0, 24)
-    },
-    y: { 
-      label: "Normalized generation",
-      grid: true
-    },
-    color: { 
-      legend: true,
-      label: "Year"
-    },
-    marks: [
-      Plot.ruleY([1], { stroke: "black", strokeDasharray: "4,4" }),
-      Plot.line(plot_data,
-        Plot.groupZ(
-          { y: "mean" },
-          {
-            x: "hour",
-            y: "gen",
-            stroke: "year",
-            z: "year",
-            curve: "catmull-rom"
-          }
-        )
-      )
-    ]
-  });
-}
 ```

@@ -8,7 +8,7 @@ library(purrr)
 # NOTE: This script requires a VPN connection to Ukraine due to geo-restrictions
 # on ua.energy website
 
-source("src/helper_func_BM.R")
+source("src/helper_func_BM_UA.R")
 
 # Function to get the last date from existing file
 get_last_bm_date <- function(filepath) {
@@ -63,6 +63,36 @@ if (length(all_urls) == 0) {
           arrange(hour)
       }
       
+      # Join the DAM data and convert prices to EUR
+      bm_ua <- bm_ua |>
+        pivot_longer(
+          cols = c(volume_up, price_up, volume_down, price_down),
+          names_to = c(".value", "direction"),
+          names_sep = "_"
+        ) |> 
+        rename(
+          price_bm_uah = price,
+          volume_bm = volume
+        ) |> 
+        left_join(
+          read_csv("data/data_raw/DAM_UA.csv", show_col_types = FALSE) |>
+        select(country, hour, price_dam_eur = price_eur_mwh, price_dam_uah = price_uah, volume_dam = volume, rate),
+          by = join_by(country, hour),
+          relationship = "many-to-one"
+        ) |> 
+        mutate(
+          datetime = hour,
+          date = as_date(hour),
+          hour_of_day = hour(hour),
+          .before = direction
+        ) |>
+        mutate(
+          price_bm_eur = price_bm_uah / rate,
+          .before = price_bm_uah
+        ) |>
+        select(-hour) |>
+        rename(hour = datetime)
+
       # Save
       write_csv(bm_ua, "data/data_raw/BM_UA.csv")
       message("BM data updated. Total rows: ", nrow(bm_ua))
