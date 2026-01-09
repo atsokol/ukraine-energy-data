@@ -248,6 +248,50 @@ download_transm_phys_eu <- function(zone_pairs, start_datetime, end_datetime, ch
     )
 }
 
+# Function to download ECB exchange rates
+get_ecb_exchange_rate <- function(currency_code, start_date, end_date) {
+  # ECB Data Portal API endpoint for exchange rates
+  # Format: https://data-api.ecb.europa.eu/service/data/EXR/D.{CURRENCY}.EUR.SP00.A
+  
+  url <- glue::glue(
+    "https://data-api.ecb.europa.eu/service/data/EXR/D.{currency_code}.EUR.SP00.A",
+    "?startPeriod={start_date}&endPeriod={end_date}&format=csvdata"
+  )
+  
+  tryCatch({
+    # Download CSV data
+    response <- httr::GET(url)
+    
+    if (httr::http_error(response)) {
+      stop("ECB API request failed for ", currency_code, ": ", httr::status_code(response))
+    }
+    
+    # Parse CSV response
+    csv_text <- httr::content(response, as = "text", encoding = "UTF-8")
+    fx_data <- read.csv(text = csv_text, stringsAsFactors = FALSE)
+    
+    # Extract date and rate columns
+    # ECB returns: TIME_PERIOD, OBS_VALUE, etc.
+    result <- fx_data |>
+      dplyr::transmute(
+        date = as.Date(TIME_PERIOD),
+        rate = as.numeric(OBS_VALUE)
+      ) |>
+      dplyr::filter(!is.na(rate), !is.na(date)) |>
+      dplyr::arrange(date)
+    
+    if (nrow(result) == 0) {
+      warning("No exchange rate data returned for ", currency_code)
+    }
+    
+    return(result)
+    
+  }, error = function(e) {
+    message("Error downloading ECB rates for ", currency_code, ": ", e$message)
+    return(tibble::tibble(date = as.Date(character()), rate = numeric()))
+  })
+}
+
 # Function to get ECB exchange rates and convert prices to EUR
 convert_to_eur <- function(df, date_col = "hour", currency_col = "currency", 
                           price_col = "price", start_date = "2022-01-01", 

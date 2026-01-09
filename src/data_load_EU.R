@@ -4,6 +4,8 @@ library(tidyr)
 library(purrr)
 library(readr)
 library(lubridate)
+library(httr)
+library(glue)
 library(entsoeapi)
 
 # Read ENTSOE_PAT from environment variable
